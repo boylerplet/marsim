@@ -2,6 +2,12 @@
 
 This is a tool to render / visualize stock market chart using the OLHC of a symbol
 
+
+
+https://github.com/user-attachments/assets/25dc2632-51fb-46e6-9d6e-9df130ad0c2f
+
+
+
 # Build and installation
 
 The installation instructions for this project is solely restricted to `Linux` environments.
