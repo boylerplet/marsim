@@ -1,6 +1,7 @@
 #ifndef MARSIM_IMPLEMENTATION
 #define MARSIM_IMPLEMENTATION
 #include "raylib.h"
+#include <stddef.h>
 
 #define SCALE_FACTOR    100
 #define WINDOW_WIDTH    (16 * SCALE_FACTOR)
@@ -77,6 +78,12 @@ typedef struct {
 	float close;
 } CandleStick;
 
+typedef struct {
+	CandleStick *items;
+	size_t count;
+	size_t capacity;
+} CandleSticks;
+
 const float scale_intervals[]   = {
 	0.005f, 0.01f, 0.02f, 0.05f,
 	0.1f, 0.5f, 1.0f, 5.0f,
@@ -86,6 +93,32 @@ const float scale_intervals[]   = {
 };
 const int   num_scale_intervals = sizeof(scale_intervals) / 
 	sizeof(scale_intervals[0]);
+
+
+void draw_dotted_lines_h(float src, float dst, float y, float dash_size, float gap_size, float line_thickness, Color color) {
+	int dir = 1;
+	if (dst < src) dir *= -1;
+
+	float dx = 0;
+
+	if (dir == 1) {
+		// Draw towards right
+		while (src + dx <= dst) {
+			Vector2 start = { src + dx            , y };
+			Vector2 end   = { src + dx + dash_size, y };
+			DrawLineEx(start, end, line_thickness, color);
+			dx += (dash_size + gap_size);
+		}
+	} else {
+		// Draw towards left
+		while (src - dx >= dst) {
+			Vector2 start = { .x = {src - dx}            , .y = y };
+			Vector2 end   = { .x = {src - dx - dash_size}, .y = y };
+			DrawLineEx(start, end, line_thickness, color);
+			dx += (dash_size + gap_size);
+		}
+	}
+}
 
 
 #endif // MARSIM_IMPLEMENTATION

@@ -29,6 +29,12 @@ typedef struct {
 	float close;
 } CandleStick;
 
+typedef struct {
+	CandleStick *items;
+	size_t count;
+	size_t capacity;
+} CandleSticks;
+
 float float_rand(float min, float max) {
     float scale = rand() / (float) RAND_MAX; /* [0, 1.0] */
     return min + scale * ( max - min );      /* [min, max] */
@@ -62,11 +68,11 @@ CandleStick generate_candle(float open) {
 	if (is_outlier) {
 		// Handle case for outliers
 		if (direction_up) {
-			candle.high = candle.close + frandomf() * max_candle_body / 2;
-			candle.low  = candle.open  - frandomf() * max_candle_body / 2;
+			candle.high = candle.close + frandomf() * max_candle_body;
+			candle.low  = candle.open  - frandomf() * max_candle_body;
 		} else {
-			candle.high = candle.open  + frandomf() * max_candle_body / 2;
-			candle.low  = candle.close - frandomf() * max_candle_body / 2;
+			candle.high = candle.open  + frandomf() * max_candle_body;
+			candle.low  = candle.close - frandomf() * max_candle_body;
 		}
 	} else {
 		// Handle case for normal candles
@@ -86,6 +92,7 @@ int main() {
 	CandleStick chart[HORIZON] = {0};
 	float       open_first     = float_rand(MIN_CLOSE, MAX_CLOSE);
 	float       last_close     = open_first;
+	size_t      capacity       = 4;
 
 	for (int i = 0; i < HORIZON; i++) {
 		CandleStick cs = generate_candle(last_close);
@@ -94,24 +101,16 @@ int main() {
 	}
 
 	FILE *fptr;
-	fptr = fopen("./candlesticks_.h", "w");
+	fptr = fopen("../STE", "w");
 	if (!fptr) {
 		fprintf(stderr, "[ERROR]: Could not open file \"out\" to write");
 	}
 
-	fprintf(fptr, "#ifndef MARSIM_IMPLEMENTATION" "\n");
-	fprintf(fptr, "#include \"marsim.h\"" "\n");
-	fprintf(fptr, "#endif" "\n");
-	fprintf(fptr, "" "\n");
-	fprintf(fptr, "#include \"nob.h\"" "\n");
-	fprintf(fptr, "" "\n");
-	fprintf(fptr, "const CandleStick candlesticks[250] = {" "\n");
-
 	for (int j = 0; j < HORIZON; j++) {
-		fprintf(fptr, "    { %4.3ff, %4.3ff, %4.3ff, %4.3ff },\n", chart[j].open, chart[j].low, chart[j].high, chart[j].close);
-	}
+		fprintf(fptr, "%4.3f, %4.3f, %4.3f, %4.3f,\n", chart[j].open, chart[j].low, chart[j].high, chart[j].close);
 
-	fprintf(fptr, "};" "\n");
+		if (j + 1 >= capacity) capacity *= 2;
+	}
 
 	fclose(fptr);
 	printf("[INFO]: Process Complete\n");

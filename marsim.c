@@ -1,7 +1,41 @@
+#include <math.h>
+#include <stdio.h>
 #include "raylib.h"
 #include "marsim.h"
-#include "candlesticks.h"
-#include <math.h>
+#include "nob.h"
+
+bool read_data_from_file(CandleSticks *xs, const char *filename) {
+	FILE *fptr = fopen(filename, "r");
+	if (fptr == NULL) {
+		TraceLog(LOG_FATAL, "RF: Could not read file: %s", filename);
+		return false;
+	} else {
+		TraceLog(LOG_INFO, "RF: Opened file '%s'", filename);
+	}
+
+	float open;
+	float low;
+	float close;
+	float high;
+
+	// Read lines into xs
+	while(fscanf(fptr, "%f, %f, %f, %f,", &open, &low, &high, &close) == 4) {
+		CandleStick temp = {
+			.open  = open,
+			.low   = low,
+			.high  = high,
+			.close = close
+		};
+
+		nob_da_append(xs, temp);
+	};
+
+	TraceLog(LOG_INFO, "RF: %d values read from file '%s'", xs->count, filename);
+
+	fclose(fptr);
+
+	return true;
+}
 
 void render_panel() {
 	// Left   panel
@@ -110,21 +144,21 @@ float norm_dx(const ViewState *view, int index, float offset) {
 }
 
 bool isuptrend(const CandleStick *cs) {
-	return cs->open > cs->close;
+	return cs->open < cs->close;
 }
 
-void render_candlesticks(const ViewState *view, const PriceConfig *pc, const CandleStick cs_a[250]) {
+void render_candlesticks(const ViewState *view, const PriceConfig *pc, const CandleSticks *cs_a) {
 	BeginScissorMode(VIEWPORT_LEFT, VIEWPORT_TOP, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-	for (int i = 0; i < 250; i++) {
+	for (size_t i = 0; i < cs_a->count; i++) {
 
 		Rectangle body = {
 			norm_dx(view, i, 0),
-			norm_dy(pc, get_cs_top(&cs_a[i])),
+			norm_dy(pc, get_cs_top(&cs_a->items[i])),
 			view->candlestick_width - 2.0f,
-			fabsf(cs_a[i].open - cs_a[i].close) * VIEWPORT_HEIGHT / pc->price_range,
+			fabsf(cs_a->items[i].open - cs_a->items[i].close) * VIEWPORT_HEIGHT / pc->price_range,
 		};
 
-		if (isuptrend(&cs_a[i])) {
+		if (isuptrend(&cs_a->items[i])) {
 #ifdef UP_OUTLINE
 			DrawRectangleLinesEx(
 				body,
@@ -139,16 +173,16 @@ void render_candlesticks(const ViewState *view, const PriceConfig *pc, const Can
 #endif // UP_OUTLINE
 			DrawLine(
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, cs_a[i].high),
+				norm_dy(pc, cs_a->items[i].high),
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, get_cs_top(&cs_a[i])),
+				norm_dy(pc, get_cs_top(&cs_a->items[i])),
 				GetColor(CLR_TOP_WICK_UPTREND)
 			); // Top wick uptrend
 			DrawLine(
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, get_cs_bottom(&cs_a[i])),
+				norm_dy(pc, get_cs_bottom(&cs_a->items[i])),
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, cs_a[i].low),
+				norm_dy(pc, cs_a->items[i].low),
 				GetColor(CLR_BOTTOM_WICK_UPTREND)
 			); // Bottom wick uptrend
 		} else {
@@ -166,20 +200,91 @@ void render_candlesticks(const ViewState *view, const PriceConfig *pc, const Can
 #endif // DOWN_OUTLINE
 			DrawLine(
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, cs_a[i].high),
+				norm_dy(pc, cs_a->items[i].high),
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, get_cs_top(&cs_a[i])),
+				norm_dy(pc, get_cs_top(&cs_a->items[i])),
 				GetColor(CLR_TOP_WICK_DOWNTREND)
 			); // Top wick uptrend
 			DrawLine(
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, get_cs_bottom(&cs_a[i])),
+				norm_dy(pc, get_cs_bottom(&cs_a->items[i])),
 				norm_dx(view, i, view->candlestick_width / 2),
-				norm_dy(pc, cs_a[i].low),
+				norm_dy(pc, cs_a->items[i].low),
 				GetColor(CLR_BOTTOM_WICK_DOWNTREND)
 			); // Bottom wick uptrend
 		}
 	}
+
+	EndScissorMode();
+}
+
+void mark_last_candle(const ViewState *view, const PriceConfig *pc, CandleSticks *cs_a) {
+	CandleStick last = nob_da_last(cs_a);
+
+	/*last.close = 1024.0f;*/
+
+	float MARK_HEIGHT     = 26.0f;
+	float MARK_WIDTH      = 0.0f;
+	float TEXT_BOX_HEIGHT = 20.0f;
+	float TEXT_HEIGHT     = 16.0f;
+	float TEXT_MARGIN     = 4.0f;
+	float BOX_PADDING_R   = 5.0f;
+	float BOX_PADDING_L   = 15.0f;
+	float MARK_RIGHT      = VIEWPORT_RIGHT + MARGIN_RIGHT - 5.0f;
+	float MARK_LEFT       = 0.0f;
+
+	char price_text[25] = {0};
+	int  clr_price_text = 0;
+
+	if (last.open == last.close) {
+		clr_price_text = 0xFFFFFFFF;
+	} else if (last.open > last.close) {
+		clr_price_text = CLR_DOWN_CANDLESTICK_BODY;
+	} else {
+		clr_price_text = CLR_UP_CANDLESTICK_BODY;
+	}
+
+	snprintf(price_text, 24, "%c %.3f", last.close < 0 ? '-' : '+', fabsf(last.close));
+
+	Vector2 text_dimensions = MeasureTextEx(GetFontDefault(), price_text, 16.0f, 1.0f);
+	MARK_LEFT               = MARK_RIGHT - BOX_PADDING_R - (text_dimensions.x + 2 * TEXT_MARGIN) - BOX_PADDING_L;
+	MARK_WIDTH              = MARK_RIGHT - MARK_LEFT;
+	/*TraceLog(LOG_INFO, "MARK: Height: %.3f, Width: %.3f", text_dimensions.y, text_dimensions.x);*/
+
+	BeginScissorMode(VIEWPORT_LEFT, VIEWPORT_TOP, VIEWPORT_WIDTH + MARGIN_RIGHT, VIEWPORT_HEIGHT);
+
+	DrawRectangle(
+		MARK_LEFT,
+		norm_dy(pc, last.close) - (MARK_HEIGHT / 2),
+		MARK_WIDTH,
+		MARK_HEIGHT,
+		GetColor(0xF2C811FF) // Yellow shade
+	); // Mark border
+	DrawRectangle(
+		MARK_LEFT + BOX_PADDING_L,
+		norm_dy(pc, last.close) - (TEXT_BOX_HEIGHT / 2),
+		MARK_WIDTH - BOX_PADDING_L - BOX_PADDING_R,
+		TEXT_BOX_HEIGHT,
+		GetColor(CLR_VIEWPORT_BG)
+	); // Mark text area
+	DrawText(
+		price_text,
+		MARK_LEFT + BOX_PADDING_L + TEXT_MARGIN,
+		norm_dy(pc, last.close) - (TEXT_HEIGHT / 2),
+		TEXT_HEIGHT,
+		GetColor(clr_price_text)
+	); // Price
+
+	draw_dotted_lines_h(
+		/*norm_dx(view, cs_a->count - 1, 0) + (view->candlestick_width / 2),*/
+		VIEWPORT_LEFT,
+		MARK_LEFT,
+		norm_dy(pc, last.close) + 0.5f,
+		3.0f,
+		2.0f,
+		1.0f,
+		GetColor(0x777777FF)
+	);
 
 	EndScissorMode();
 }
@@ -191,7 +296,7 @@ int main() {
     ViewState view         = {0};
     view.x_offset          = -60.0f;
     view.y_offset          = 0.0f;
-	view.y_scale           = 5.0f;
+	view.y_scale           = 1.0f;
     view.candlestick_width = 8.0f;
     view.is_dragging       = false;
 
@@ -201,6 +306,10 @@ int main() {
 		.price_max      = 0.0f,
 		.price_min      = 0.0f,
 	};
+
+	CandleSticks candlesticks = {0};
+	char *filename            = "./STE";
+	if (!read_data_from_file(&candlesticks, filename)) return 1;
 
     float time_window = 60 * 60 * 24.0f;
 
@@ -260,8 +369,10 @@ int main() {
 		};
         DrawRectangleLinesEx(viewport, 1.0f, GetColor(CLR_VIEWPORT_BORDER_BG));
 
-		render_candlesticks(&view, &price_c, candlesticks);
+
+		render_candlesticks(&view, &price_c, &candlesticks);
 		render_axes(&view, &price_c, time_window);
+		mark_last_candle(&view, &price_c, &candlesticks);
 
         EndDrawing();
     }
