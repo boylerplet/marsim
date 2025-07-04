@@ -19,10 +19,22 @@ void libs(Nob_Cmd *cmd) {
     nob_cmd_append(cmd, "-l:libraylib.so", "-lm");
 }
 
+bool build_lib() {
+    Nob_Cmd cmd = {0};
+
+    cc(&cmd);
+    nob_cmd_append(&cmd, "-c");
+    nob_cmd_append(&cmd, "marsim_lib.c");
+    libs(&cmd);
+
+    return nob_cmd_run_sync(cmd);
+}
+
 bool build_main() {
     Nob_Cmd cmd = {0};
 
     cc(&cmd);
+    nob_cmd_append(&cmd, "marsim_lib.o");
     nob_cmd_append(&cmd, "-o", "main");
     nob_cmd_append(&cmd, "marsim.c");
     libs(&cmd);
@@ -33,6 +45,7 @@ bool build_main() {
 int main(int argc, char **argv) {
     NOB_GO_REBUILD_URSELF(argc, argv);
 
+	if (!build_lib()) return 1;
     if (!build_main()) return 1;
     else nob_log(NOB_INFO, "marsim.c -> 'main'");
 

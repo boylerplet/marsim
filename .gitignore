@@ -1,5 +1,6 @@
 raylib/
 test/
+*.o
 nob.old
 nob
 main

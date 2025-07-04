@@ -4,6 +4,12 @@
 #include "marsim.h"
 #include "nob.h"
 
+// Declarations
+void draw_dotted_lines_h(float src, float dst, float y, float dash_size, float gap_size, float line_thickness, Color color);
+bool in_y_axis();
+bool in_viewport_or_x_axis();
+
+// Functions
 bool read_data_from_file(CandleSticks *xs, const char *filename) {
 	FILE *fptr = fopen(filename, "r");
 	if (fptr == NULL) {
@@ -221,17 +227,18 @@ void render_candlesticks(const ViewState *view, const PriceConfig *pc, const Can
 void mark_last_candle(const ViewState *view, const PriceConfig *pc, CandleSticks *cs_a) {
 	CandleStick last = nob_da_last(cs_a);
 
+	if (view->is_dragging) {};
 	/*last.close = 1024.0f;*/
 
-	float MARK_HEIGHT     = 26.0f;
-	float MARK_WIDTH      = 0.0f;
-	float TEXT_BOX_HEIGHT = 20.0f;
 	float TEXT_HEIGHT     = 16.0f;
-	float TEXT_MARGIN     = 4.0f;
-	float BOX_PADDING_R   = 5.0f;
-	float BOX_PADDING_L   = 15.0f;
-	float MARK_RIGHT      = VIEWPORT_RIGHT + MARGIN_RIGHT - 5.0f;
+	float TEXT_BOX_HEIGHT = TEXT_HEIGHT + 8.0f;
+	float TEXT_MARGIN     = 6.0f; // Inline
+	float MARK_HEIGHT     = TEXT_BOX_HEIGHT + 6.0f;
+	float MARK_WIDTH      = 0.0f;
 	float MARK_LEFT       = 0.0f;
+	float MARK_RIGHT      = VIEWPORT_RIGHT + MARGIN_RIGHT - 5.0f;
+	float BOX_PADDING_R   = 6.0f;
+	float BOX_PADDING_L   = 10.0f;
 
 	char price_text[25] = {0};
 	int  clr_price_text = 0;
@@ -265,7 +272,7 @@ void mark_last_candle(const ViewState *view, const PriceConfig *pc, CandleSticks
 		norm_dy(pc, last.close) - (TEXT_BOX_HEIGHT / 2),
 		MARK_WIDTH - BOX_PADDING_L - BOX_PADDING_R,
 		TEXT_BOX_HEIGHT,
-		GetColor(CLR_VIEWPORT_BG)
+		GetColor(CLR_PANEL_BG)
 	); // Mark text area
 	DrawText(
 		price_text,
@@ -311,9 +318,16 @@ int main() {
 	char *filename            = "./STE";
 	if (!read_data_from_file(&candlesticks, filename)) return 1;
 
-    float time_window = 60 * 60 * 24.0f;
+    float time_window   = 60 * 60 * 24.0f;
+	float tick_timer    = 0.0f;
+	float tick_interval = 0.7f;
+	float min_timer     = 0.0f;
 
     while (!WindowShouldClose()) {
+		float dt    = GetFrameTime();
+		tick_timer += dt;
+		min_timer  += dt;
+
         // Handle mouse interaction
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
             if (!view.is_dragging) {
@@ -334,13 +348,29 @@ int main() {
 		}
 
 		// Handle Scroll (y-axis zoom)
-		float wheel = GetMouseWheelMove();
-		if (wheel != 0) {
-			float zoom_factor = (wheel > 0) ? 1.1f : 0.9f;
-			view.y_scale *= zoom_factor;
-			if (view.y_scale < 0.001f) view.y_scale = 0.001f;
-			if (view.y_scale > 1000.0f) view.y_scale = 1000.0f;
+		if (in_y_axis()) {
+			float wheel = GetMouseWheelMove();
+			if (wheel != 0) {
+				float zoom_factor = (wheel > 0) ? 1.1f : 0.9f;
+				view.y_scale     *= zoom_factor;
+				if (view.y_scale < 0.001f) view.y_scale = 0.001f;
+				if (view.y_scale > 1000.0f) view.y_scale = 1000.0f;
+			}
 		}
+
+		if (in_viewport_or_x_axis()) {
+			float wheel = GetMouseWheelMove();
+			if (wheel != 0) {
+				float zoom_factor       = (wheel > 0) ? 1.1f : 0.9f;
+				view.candlestick_width *= zoom_factor;
+				if (view.candlestick_width < 4.0f)   view.candlestick_width = 4.0f;
+				if (view.candlestick_width > 100.0f) view.candlestick_width = 100.0f;
+				view.x_offset *= zoom_factor;
+				view.x_offset += (wheel > 0 ? 1.0f : -1.0f) * (GetMousePosition().x - MARGIN_LEFT) * 0.1f;
+
+			}
+		}
+
 		// Clamp offsets
         if (view.x_offset < -60.0f) view.x_offset = -60.0f;
 		price_c.price_range = (price_c.base_price_max - price_c.base_price_min) / view.y_scale;
@@ -367,11 +397,37 @@ int main() {
 		    .width  = VIEWPORT_WIDTH,
 		    .height = VIEWPORT_HEIGHT
 		};
-        DrawRectangleLinesEx(viewport, 1.0f, GetColor(CLR_VIEWPORT_BORDER_BG));
 
+		render_axes(&view, &price_c, time_window);
+
+		if (tick_timer >= tick_interval) {
+			CandleStick last = nob_da_last(&candlesticks);
+
+			float new_close = last.close + (((float)rand() / RAND_MAX) * 5.0f * ((float)rand() / RAND_MAX > 0.5f ? 1.0f : -1.0f));
+
+			candlesticks.items[candlesticks.count - 1].close = new_close;
+			if (new_close >= candlesticks.items[candlesticks.count - 1].high) {
+				candlesticks.items[candlesticks.count - 1].high = new_close;
+			}
+			if (new_close <= candlesticks.items[candlesticks.count - 1].low) {
+				candlesticks.items[candlesticks.count - 1].low = new_close;
+			}
+
+			tick_timer = 0.0f;
+		}
+
+		if (min_timer >= 60.0f) {
+			// Generate next candle
+			CandleStick last = nob_da_last(&candlesticks);
+			CandleStick new  = { last.close, last.close, last.close, last.close };
+
+			nob_da_append(&candlesticks, new);
+
+			min_timer = 0.0f;
+		}
 
 		render_candlesticks(&view, &price_c, &candlesticks);
-		render_axes(&view, &price_c, time_window);
+        DrawRectangleLinesEx(viewport, 1.0f, GetColor(CLR_VIEWPORT_BORDER_BG));
 		mark_last_candle(&view, &price_c, &candlesticks);
 
         EndDrawing();
@@ -381,3 +437,4 @@ int main() {
 
     return 0;
 }
+
